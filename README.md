@@ -9,6 +9,7 @@ A React application with file-based navigation designed for testing AI-generated
 - ⚡ **Hot reload** - Instant feedback during development
 - 🐳 **Docker support** - Easy containerization and deployment
 - 🎯 **Modern UI** - Beautiful, clean interface for testing
+- 📤 **Browser uploads** - Upload mockups from the dashboard without redeploying
 
 ## Quick Start
 
@@ -27,25 +28,42 @@ The app will be available at `http://localhost:3000`
 ### Development (local)
 
 ```bash
-# Install dependencies
-npm install
+# Terminal 1 — API server (file uploads & serving)
+cd api && npm install
+DATA_DIR=/tmp/mockups node index.js
 
-# Start development server
+# Terminal 2 — Vite dev server (proxies /api and /mockups to localhost:3001)
+npm install
 npm run dev
 ```
 
 ### Production (with Docker)
 
 ```bash
-# Build and run production container
-npm run docker:prod
-
-# Or build manually
-docker build -t ai-mockup-tester .
-docker run -p 8080:80 ai-mockup-tester
+# Build and start both services (frontend + upload API)
+docker compose up --build -d
 ```
 
-The production app will be available at `http://localhost:8080`
+The production app will be available at `http://localhost:8080` (or the value of `VITE_PORT` in `.env`).
+
+## Mockup Dashboard
+
+The home page (`/`) is a dashboard for uploading and sharing UI mockups.
+
+- **Upload any file** — images, HTML, PDFs, SVGs, up to 100 MB
+- **Instant shareable URL** — each upload gets a `/mockups/<id>.<ext>` URL
+- **HTML files render live** — open an uploaded `.html` file and the browser renders it fully, including styles and interactions
+- **Drag and drop** supported in the upload modal
+- **Persistent** — uploads live in a Docker named volume (`mockups-data`) and survive container rebuilds and redeployments
+
+### Upload API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/mockups` | List all mockups |
+| `POST` | `/api/mockups` | Upload a file (`multipart/form-data`: `file`, `title?`) |
+| `DELETE` | `/api/mockups/:id` | Delete a mockup |
+| `GET` | `/mockups/:filename` | Serve an uploaded file |
 
 ## Docker Commands
 
@@ -69,51 +87,57 @@ npm run docker:build
 # Run production container
 npm run docker:run-prod
 
-# Start with docker-compose
+# Start with docker-compose (includes upload API + persistent volume)
 npm run docker:prod
 ```
 
 ## Adding New Pages
 
-1. Create a new component in `src/pages/YourPage.jsx`
-2. Add the page configuration to `src/utils/pageLoader.js`:
+1. Create a new component in `src/pages/YourPage.tsx`
+2. Add a route in `src/App.tsx`:
 
-```javascript
-import YourPage from '../pages/YourPage.jsx';
+```tsx
+import YourPage from './pages/YourPage';
 
-export const pages = [
+<Route path="/your-page" element={<YourPage />} />
+```
+
+3. Add a link to the `COMPONENT_PAGES` array in `src/pages/Dashboard.tsx`:
+
+```ts
+const COMPONENT_PAGES = [
   // ... existing pages
-  {
-    path: '/your-page',
-    component: YourPage,
-    title: 'Your Page',
-    description: 'Description of your page'
-  }
+  { label: 'Your Page', path: '/your-page' },
 ];
 ```
 
-3. The page will automatically appear in the navigation!
+The page will appear as a link in the dashboard nav.
 
 ## Project Structure
 
 ```
 src/
-├── components/          # Reusable components
-│   ├── Navigation.jsx
-│   └── Navigation.css
-├── pages/              # Page components
-│   ├── HomePage.jsx
-│   ├── AboutPage.jsx
-│   ├── ContactPage.jsx
-│   ├── DashboardPage.jsx
-│   ├── ProfilePage.jsx
-│   └── Page.css
-├── utils/              # Utility functions
-│   └── pageLoader.js   # File-based routing config
-├── App.jsx             # Main app component
-├── App.css             # Global styles
-├── main.jsx            # Entry point
-└── index.css           # Base styles
+├── pages/
+│   ├── Dashboard.tsx       # Home page — mockup gallery + upload
+│   └── visits/             # Visit-related component pages
+├── App.tsx                 # Routes
+├── main.tsx                # Entry point
+└── index.css               # Base styles
+
+api/
+├── index.js                # Express upload API (GET/POST/DELETE /api/mockups)
+├── package.json
+└── Dockerfile
+```
+
+## Architecture
+
+```
+browser
+  └── nginx (port 80)
+        ├── /api/*      → proxy → api:3001
+        ├── /mockups/*  → proxy → api:3001  (serves uploaded files)
+        └── /*          → React SPA
 ```
 
 ## Available Scripts
@@ -132,9 +156,10 @@ src/
 - **React 19** - UI library
 - **Vite** - Build tool and dev server
 - **React Router** - Client-side routing
+- **Tailwind CSS** - Styling
+- **Express + Multer** - Upload API
 - **Docker** - Containerization
-- **Nginx** - Production web server
-- **CSS3** - Modern styling with gradients and animations
+- **Nginx** - Production reverse proxy and static file serving
 
 ## License
 

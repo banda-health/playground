@@ -4,6 +4,8 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    client_max_body_size 100m;
+
     # Gzip compression
     gzip on;
     gzip_vary on;
@@ -17,6 +19,21 @@ server {
         application/javascript
         application/xml+rss
         application/json;
+
+    # Proxy API and uploaded mockups to the api service
+    location ^~ /api/ {
+        proxy_pass http://api:${API_PORT}/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 120;
+    }
+
+    location ^~ /mockups/ {
+        proxy_pass http://api:${API_PORT}/mockups/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+    }
 
     # Handle client-side routing
     location / {

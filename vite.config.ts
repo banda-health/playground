@@ -11,6 +11,10 @@ export default defineConfig(({ mode }) => {
 			port: parseInt(env.VITE_PORT) || 3000,
 			host: env.VITE_HOST || 'localhost',
 			open: false, // Disable auto-open in Docker
+			proxy: {
+				'/api': `http://localhost:${parseInt(env.API_PORT) || 3001}`,
+				'/mockups': `http://localhost:${parseInt(env.API_PORT) || 3001}`,
+			},
 		},
 	};
 });

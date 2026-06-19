@@ -23,14 +23,12 @@ FROM nginx:alpine AS production
 # Copy built assets from builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Copy custom nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Copy nginx config template — envsubst runs at container start via the
+# nginx image's built-in entrypoint, substituting $API_PORT before nginx starts
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 
 # Expose port (will be overridden by docker-compose)
 EXPOSE 80
-
-# Start nginx
-CMD ["nginx", "-g", "daemon off;"]
 
 # Stage 3: Development image
 FROM node:20-alpine AS development
