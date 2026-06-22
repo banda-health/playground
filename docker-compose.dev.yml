@@ -1,0 +1,6 @@
+# Optional override for local development when running the API outside Docker.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up postgres -d
+services:
+  postgres:
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
