@@ -137,7 +137,7 @@ async function main() {
   }
 
   const hubConfig = await resolveHubConfig();
-  registerAuthRoutes(app, { upsertUser, hubConfig });
+  registerAuthRoutes(app, { upsertUser, hubConfig, sessionSecret: SESSION_SECRET });
 
   app.listen(PORT, () => console.log(`API :${PORT}`));
 }

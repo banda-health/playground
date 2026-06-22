@@ -1,8 +1,43 @@
-import { createHash, randomBytes } from 'crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { getUserById } from './db.js';
 
 function base64UrlEncode(buffer) {
   return buffer.toString('base64url');
+}
+
+function signOAuthState(codeVerifier, secret) {
+  const nonce = base64UrlEncode(randomBytes(16));
+  const payload = JSON.stringify({ nonce, codeVerifier });
+  const payloadB64 = base64UrlEncode(Buffer.from(payload, 'utf8'));
+  const signature = createHmac('sha256', secret).update(payloadB64).digest('base64url');
+  return `${payloadB64}.${signature}`;
+}
+
+function verifyOAuthState(state, secret) {
+  if (!state || typeof state !== 'string') return null;
+
+  const dot = state.lastIndexOf('.');
+  if (dot === -1) return null;
+
+  const payloadB64 = state.slice(0, dot);
+  const signature = state.slice(dot + 1);
+  const expected = createHmac('sha256', secret).update(payloadB64).digest('base64url');
+
+  try {
+    if (signature.length !== expected.length
+      || !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  try {
+    const { codeVerifier } = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+    return typeof codeVerifier === 'string' ? { codeVerifier } : null;
+  } catch {
+    return null;
+  }
 }
 
 function generateCodeVerifier() {
@@ -96,7 +131,7 @@ export function requireAuth(req, res, next) {
   res.status(401).json({ error: 'Unauthorized' });
 }
 
-export function registerAuthRoutes(app, { upsertUser, hubConfig: config }) {
+export function registerAuthRoutes(app, { upsertUser, hubConfig: config, sessionSecret }) {
   const devBypass = isDevAuthBypassEnabled();
 
   if (devBypass) {
@@ -129,12 +164,9 @@ export function registerAuthRoutes(app, { upsertUser, hubConfig: config }) {
       return res.status(503).json({ error: 'Hub SSO is not configured' });
     }
 
-    const state = base64UrlEncode(randomBytes(16));
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = generateCodeChallenge(codeVerifier);
-
-    req.session.oauthState = state;
-    req.session.codeVerifier = codeVerifier;
+    const state = signOAuthState(codeVerifier, sessionSecret);
 
     const params = new URLSearchParams({
       response_type: 'code',
@@ -155,20 +187,20 @@ export function registerAuthRoutes(app, { upsertUser, hubConfig: config }) {
       return res.redirect('/?auth_error=Hub%20SSO%20is%20not%20configured');
     }
 
-    const { code, state, error, error_description: errorDescription } = req.query;
+    const { code, state: stateParam, error, error_description: errorDescription } = req.query;
+    const state = Array.isArray(stateParam) ? stateParam[0] : stateParam;
 
     if (error) {
       const message = encodeURIComponent(String(errorDescription || error));
       return res.redirect(`/?auth_error=${message}`);
     }
 
-    if (!code || state !== req.session.oauthState) {
+    const oauthState = verifyOAuthState(state, sessionSecret);
+    if (!code || !oauthState) {
       return res.redirect('/?auth_error=Invalid%20OAuth%20state');
     }
 
-    const codeVerifier = req.session.codeVerifier;
-    delete req.session.oauthState;
-    delete req.session.codeVerifier;
+    const { codeVerifier } = oauthState;
 
     try {
       const tokenRes = await fetch(`${config.hubUrl}/api/rest/oauth2/token`, {
@@ -221,7 +253,13 @@ export function registerAuthRoutes(app, { upsertUser, hubConfig: config }) {
       const user = await upsertUser({ hubId, name, email, avatarUrl });
       req.session.userId = user.id;
 
-      res.redirect('/');
+      req.session.save((saveErr) => {
+        if (saveErr) {
+          console.error('Failed to save session after login:', saveErr);
+          return res.redirect('/?auth_error=Failed%20to%20save%20session');
+        }
+        res.redirect('/');
+      });
     } catch (err) {
       console.error('OAuth callback error:', err);
       res.redirect('/?auth_error=Authentication%20failed');
