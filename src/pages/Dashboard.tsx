@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import type { User } from '../types';
 
 interface Mockup {
   id: string;
@@ -9,6 +10,8 @@ interface Mockup {
   uploadedAt: string;
   size: number;
   mimetype: string;
+  uploadedByName: string | null;
+  uploadedByEmail: string | null;
 }
 
 const COMPONENT_PAGES = [
@@ -30,10 +33,11 @@ function isAllowedFile(file: File) {
 }
 
 interface Props {
+  user: User;
   onLogout: () => void;
 }
 
-const Dashboard: React.FC<Props> = ({ onLogout }) => {
+const Dashboard: React.FC<Props> = ({ user, onLogout }) => {
   const [mockups, setMockups] = useState<Mockup[]>([]);
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
@@ -131,6 +135,7 @@ const Dashboard: React.FC<Props> = ({ onLogout }) => {
         <div className="flex items-center justify-between mb-3">
           <h1 className="text-xl font-semibold text-gray-900">Playground</h1>
           <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-500 hidden sm:inline">{user.name}</span>
             <button
               onClick={() => setShowUpload(true)}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors"
@@ -195,6 +200,9 @@ const Dashboard: React.FC<Props> = ({ onLogout }) => {
                   <p className="font-medium text-gray-900 text-sm truncate" title={m.title}>{m.title}</p>
                   <p className="text-xs text-gray-400 mt-0.5">
                     {formatDate(m.uploadedAt)} · {formatSize(m.size)}
+                    {m.uploadedByName && (
+                      <> · {m.uploadedByName}</>
+                    )}
                   </p>
                   <div className="flex gap-2 mt-3">
                     <a

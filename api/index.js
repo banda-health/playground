@@ -4,56 +4,48 @@ import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
+import {
+  initDb,
+  migrateFromMeta,
+  upsertUser,
+  listMockups,
+  createMockup,
+  deleteMockup,
+} from './db.js';
+import { requireAuth, registerAuthRoutes } from './auth.js';
 
 const app = express();
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const UPLOAD_DIR = path.join(DATA_DIR, 'mockups');
 const META_FILE = path.join(DATA_DIR, 'meta.json');
-const AUTH_PASSWORD = process.env.AUTH_PASSWORD;
 const SESSION_SECRET = process.env.SESSION_SECRET || randomUUID();
+const isProduction = process.env.NODE_ENV === 'production';
 
-if (!AUTH_PASSWORD) console.warn('WARNING: AUTH_PASSWORD not set — auth is disabled');
-if (!process.env.SESSION_SECRET) console.warn('WARNING: SESSION_SECRET not set — sessions will not survive restarts');
+if (!process.env.SESSION_SECRET) {
+  console.warn('WARNING: SESSION_SECRET not set — sessions will not survive restarts');
+}
+if (!process.env.DATABASE_URL) {
+  console.warn('WARNING: DATABASE_URL not set — database connection will fail');
+}
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+app.set('trust proxy', 1);
 
 app.use(session({
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
-  cookie: { httpOnly: true, sameSite: 'lax' },
+  cookie: {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: isProduction,
+  },
 }));
 
 app.use(express.json());
 
-function requireAuth(req, res, next) {
-  if (!AUTH_PASSWORD || req.session?.authed) return next();
-  res.status(401).json({ error: 'Unauthorized' });
-}
-
-app.post('/api/login', (req, res) => {
-  if (!AUTH_PASSWORD) return res.json({ ok: true });
-  if (req.body?.password === AUTH_PASSWORD) {
-    req.session.authed = true;
-    return res.json({ ok: true });
-  }
-  res.status(401).json({ error: 'Incorrect password' });
-});
-
-app.post('/api/logout', (req, res) => {
-  req.session.destroy(() => res.json({ ok: true }));
-});
-
-app.get('/api/me', requireAuth, (req, res) => res.json({ ok: true }));
-
-function loadMeta() {
-  try { return JSON.parse(fs.readFileSync(META_FILE, 'utf8')); }
-  catch { return []; }
-}
-
-function saveMeta(meta) {
-  fs.writeFileSync(META_FILE, JSON.stringify(meta, null, 2));
-}
+registerAuthRoutes(app, { upsertUser });
 
 const ALLOWED_EXTENSIONS = new Set([
   '.html', '.htm', '.pdf', '.svg',
@@ -83,12 +75,17 @@ const upload = multer({
 
 app.use('/mockups', requireAuth, express.static(UPLOAD_DIR));
 
-app.get('/api/mockups', requireAuth, (req, res) => {
-  res.json(loadMeta());
+app.get('/api/mockups', requireAuth, async (req, res) => {
+  try {
+    res.json(await listMockups());
+  } catch (err) {
+    console.error('Failed to list mockups:', err);
+    res.status(500).json({ error: 'Failed to list mockups' });
+  }
 });
 
 app.post('/api/mockups', requireAuth, (req, res) => {
-  upload.single('file')(req, res, (err) => {
+  upload.single('file')(req, res, async (err) => {
     if (err) {
       const message = err.code === 'LIMIT_FILE_SIZE'
         ? 'File exceeds 10 MB limit'
@@ -104,28 +101,47 @@ app.post('/api/mockups', requireAuth, (req, res) => {
       title: (req.body.title || file.originalname).trim(),
       filename: file.filename,
       url: `/mockups/${file.filename}`,
-      uploadedAt: new Date().toISOString(),
       size: file.size,
       mimetype: file.mimetype,
     };
 
-    const meta = loadMeta();
-    meta.unshift(entry);
-    saveMeta(meta);
-    res.json(entry);
+    try {
+      const mockup = await createMockup(entry, req.session.userId);
+      res.json(mockup);
+    } catch (createErr) {
+      try { fs.unlinkSync(path.join(UPLOAD_DIR, file.filename)); } catch {}
+      console.error('Failed to save mockup:', createErr);
+      res.status(500).json({ error: 'Failed to save mockup' });
+    }
   });
 });
 
-app.delete('/api/mockups/:id', requireAuth, (req, res) => {
-  const meta = loadMeta();
-  const idx = meta.findIndex(m => m.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'Not found' });
+app.delete('/api/mockups/:id', requireAuth, async (req, res) => {
+  try {
+    const entry = await deleteMockup(req.params.id);
+    if (!entry) return res.status(404).json({ error: 'Not found' });
 
-  const [entry] = meta.splice(idx, 1);
-  try { fs.unlinkSync(path.join(UPLOAD_DIR, entry.filename)); } catch {}
-  saveMeta(meta);
-  res.json({ ok: true });
+    try { fs.unlinkSync(path.join(UPLOAD_DIR, entry.filename)); } catch {}
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Failed to delete mockup:', err);
+    res.status(500).json({ error: 'Failed to delete mockup' });
+  }
 });
 
 const PORT = parseInt(process.env.PORT) || 3001;
-app.listen(PORT, () => console.log(`API :${PORT}`));
+
+async function main() {
+  await initDb();
+  const migrated = await migrateFromMeta(META_FILE);
+  if (migrated > 0) {
+    console.log(`Migrated ${migrated} mockup(s) from meta.json to Postgres`);
+  }
+
+  app.listen(PORT, () => console.log(`API :${PORT}`));
+}
+
+main().catch(err => {
+  console.error('Failed to start API:', err);
+  process.exit(1);
+});
