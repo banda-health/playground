@@ -12,7 +12,7 @@ import {
   createMockup,
   deleteMockup,
 } from './db.js';
-import { requireAuth, registerAuthRoutes } from './auth.js';
+import { requireAuth, registerAuthRoutes, resolveHubConfig } from './auth.js';
 
 const app = express();
 const DATA_DIR = process.env.DATA_DIR || '/data';
@@ -44,8 +44,6 @@ app.use(session({
 }));
 
 app.use(express.json());
-
-registerAuthRoutes(app, { upsertUser });
 
 const ALLOWED_EXTENSIONS = new Set([
   '.html', '.htm', '.pdf', '.svg',
@@ -137,6 +135,9 @@ async function main() {
   if (migrated > 0) {
     console.log(`Migrated ${migrated} mockup(s) from meta.json to Postgres`);
   }
+
+  const hubConfig = await resolveHubConfig();
+  registerAuthRoutes(app, { upsertUser, hubConfig });
 
   app.listen(PORT, () => console.log(`API :${PORT}`));
 }

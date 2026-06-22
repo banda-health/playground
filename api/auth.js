@@ -13,7 +13,13 @@ function generateCodeChallenge(verifier) {
   return createHash('sha256').update(verifier).digest('base64url');
 }
 
-function hubConfig() {
+const HUB_SERVICE_ID = '0-0-0-0-0';
+
+function hubScope(clientId) {
+  return process.env.HUB_SCOPE?.trim() || `${HUB_SERVICE_ID} ${clientId}`;
+}
+
+function hubConfigFromEnv() {
   const hubUrl = process.env.HUB_URL?.replace(/\/$/, '');
   const clientId = process.env.HUB_CLIENT_ID;
   const clientSecret = process.env.HUB_CLIENT_SECRET;
@@ -23,7 +29,47 @@ function hubConfig() {
     return null;
   }
 
-  return { hubUrl, clientId, clientSecret, redirectUri, scope: process.env.HUB_SCOPE ?? '' };
+  return {
+    hubUrl,
+    clientId,
+    clientSecret,
+    redirectUri,
+    scope: hubScope(clientId),
+  };
+}
+
+async function hubApiReachable(hubUrl) {
+  try {
+    const res = await fetch(`${hubUrl}/api/rest/users/me`, {
+      method: 'HEAD',
+      signal: AbortSignal.timeout(5000),
+    });
+    return res.ok || res.status === 401;
+  } catch {
+    return false;
+  }
+}
+
+export async function resolveHubConfig() {
+  const config = hubConfigFromEnv();
+  if (!config) return null;
+
+  if (await hubApiReachable(config.hubUrl)) return config;
+
+  if (!config.hubUrl.endsWith('/hub')) {
+    const withHubPath = `${config.hubUrl}/hub`;
+    if (await hubApiReachable(withHubPath)) {
+      console.warn(
+        `WARNING: HUB_URL should include the Hub context path. Using ${withHubPath} instead of ${config.hubUrl}`,
+      );
+      return { ...config, hubUrl: withHubPath };
+    }
+  }
+
+  console.warn(
+    `WARNING: Hub API not reachable at ${config.hubUrl}/api/rest — check HUB_URL includes any path prefix (e.g. /hub)`,
+  );
+  return config;
 }
 
 export function isDevAuthBypassEnabled() {
@@ -50,8 +96,7 @@ export function requireAuth(req, res, next) {
   res.status(401).json({ error: 'Unauthorized' });
 }
 
-export function registerAuthRoutes(app, { upsertUser }) {
-  const config = hubConfig();
+export function registerAuthRoutes(app, { upsertUser, hubConfig: config }) {
   const devBypass = isDevAuthBypassEnabled();
 
   if (devBypass) {
@@ -96,12 +141,11 @@ export function registerAuthRoutes(app, { upsertUser }) {
       client_id: config.clientId,
       redirect_uri: config.redirectUri,
       state,
+      scope: config.scope,
       code_challenge: codeChallenge,
       code_challenge_method: 'S256',
       request_credentials: 'required',
     });
-
-    if (config.scope) params.set('scope', config.scope);
 
     res.redirect(`${config.hubUrl}/api/rest/oauth2/auth?${params}`);
   });
