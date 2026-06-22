@@ -1,4 +1,5 @@
 map $http_x_forwarded_proto $forwarded_proto {
     default $http_x_forwarded_proto;
-    ''      $scheme;
+    # TLS often terminates before this container; assume HTTPS when the header is absent.
+    ''      https;
 }

@@ -21,7 +21,6 @@ const DATA_DIR = process.env.DATA_DIR || '/data';
 const UPLOAD_DIR = path.join(DATA_DIR, 'mockups');
 const META_FILE = path.join(DATA_DIR, 'meta.json');
 const SESSION_SECRET = process.env.SESSION_SECRET || randomUUID();
-const isProduction = process.env.NODE_ENV === 'production';
 
 if (!process.env.SESSION_SECRET) {
   console.warn('WARNING: SESSION_SECRET not set — sessions will not survive restarts');
@@ -35,7 +34,12 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 app.set('trust proxy', 1);
 
 const PgSession = connectPgSimple(session);
-const cookieSecure = process.env.COOKIE_SECURE === 'false' ? false : isProduction;
+const isProduction = process.env.NODE_ENV === 'production';
+// express-session only sets Secure cookies when req.secure is true (trust proxy + X-Forwarded-Proto: https).
+// Production defaults to secure; set COOKIE_SECURE=false for local HTTP testing.
+const cookieSecure = process.env.COOKIE_SECURE === 'false'
+  ? false
+  : process.env.COOKIE_SECURE === 'true' || isProduction;
 
 app.use(session({
   store: new PgSession({
