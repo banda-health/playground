@@ -65,12 +65,12 @@ const Dashboard: React.FC<Props> = ({ user, onLogout }) => {
   };
 
   const handleLogout = async () => {
-    await fetch('/api/logout', { method: 'POST' });
+    await fetch('/api/logout', { method: 'POST', credentials: 'include' });
     onLogout();
   };
 
   const load = async () => {
-    const res = await fetch('/api/mockups');
+    const res = await fetch('/api/mockups', { credentials: 'include' });
     if (res.status === 401) { onLogout(); return; }
     setMockups(await res.json());
     setLoading(false);
@@ -85,7 +85,7 @@ const Dashboard: React.FC<Props> = ({ user, onLogout }) => {
     const form = new FormData();
     form.append('file', file);
     form.append('title', title || file.name);
-    const res = await fetch('/api/mockups', { method: 'POST', body: form });
+    const res = await fetch('/api/mockups', { method: 'POST', body: form, credentials: 'include' });
     if (!res.ok) {
       const { error } = await res.json();
       setFileError(error || 'Upload failed');
@@ -102,7 +102,7 @@ const Dashboard: React.FC<Props> = ({ user, onLogout }) => {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this mockup?')) return;
-    await fetch(`/api/mockups/${id}`, { method: 'DELETE' });
+    await fetch(`/api/mockups/${id}`, { method: 'DELETE', credentials: 'include' });
     setMockups(m => m.filter(x => x.id !== id));
   };
 

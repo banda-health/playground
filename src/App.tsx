@@ -22,22 +22,22 @@ function readAuthError(): string | null {
 }
 
 async function fetchCurrentUser(): Promise<User | null> {
-	const res = await fetch('/api/me');
+	const res = await fetch('/api/me', { credentials: 'include' });
 	if (res.ok) return res.json();
 
-	const devRes = await fetch('/api/auth/dev-available');
+	const devRes = await fetch('/api/auth/dev-available', { credentials: 'include' });
 	if (!devRes.ok) return null;
 
 	const { available } = await devRes.json();
 	if (!available) return null;
 
-	const loginRes = await fetch('/api/auth/dev-login', { method: 'POST' });
+	const loginRes = await fetch('/api/auth/dev-login', { method: 'POST', credentials: 'include' });
 	if (!loginRes.ok) return null;
 	return loginRes.json();
 }
 
 async function fetchDevUserName(): Promise<string | null> {
-	const res = await fetch('/api/auth/dev-available');
+	const res = await fetch('/api/auth/dev-available', { credentials: 'include' });
 	if (!res.ok) return null;
 	const { available, userName } = await res.json();
 	return available ? userName : null;

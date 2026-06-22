@@ -66,10 +66,10 @@ function usePkce() {
 }
 
 function hubConfigFromEnv() {
-  const hubUrl = process.env.HUB_URL?.replace(/\/$/, '');
-  const clientId = process.env.HUB_CLIENT_ID;
-  const clientSecret = process.env.HUB_CLIENT_SECRET;
-  const redirectUri = process.env.HUB_REDIRECT_URI;
+  const hubUrl = process.env.HUB_URL?.trim().replace(/\/$/, '');
+  const clientId = process.env.HUB_CLIENT_ID?.trim();
+  const clientSecret = process.env.HUB_CLIENT_SECRET?.trim();
+  const redirectUri = process.env.HUB_REDIRECT_URI?.trim();
 
   if (!hubUrl || !clientId || !clientSecret || !redirectUri) {
     return null;
@@ -276,18 +276,24 @@ export function registerAuthRoutes(app, { upsertUser, hubConfig: config, session
       const avatarUrl = profile.profile?.avatar?.url ?? null;
 
       const user = await upsertUser({ hubId, name, email, avatarUrl });
+
+      await new Promise((resolve, reject) => {
+        req.session.regenerate((regenErr) => (regenErr ? reject(regenErr) : resolve()));
+      });
       req.session.userId = user.id;
 
-      req.session.save((saveErr) => {
-        if (saveErr) {
-          console.error('Failed to save session after login:', saveErr);
-          return res.redirect('/?auth_error=Failed%20to%20save%20session');
-        }
-        res.redirect('/');
+      await new Promise((resolve, reject) => {
+        req.session.save((saveErr) => (saveErr ? reject(saveErr) : resolve()));
       });
+
+      console.log(`Hub login successful for user ${user.id} (${user.name})`);
+      res.redirect('/');
     } catch (err) {
       console.error('OAuth callback error:', err);
-      res.redirect('/?auth_error=Authentication%20failed');
+      if (err.message?.includes('session')) {
+        return authRedirectError(res, 'Failed to save session');
+      }
+      return authRedirectError(res, 'Authentication failed');
     }
   });
 

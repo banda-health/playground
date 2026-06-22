@@ -18,7 +18,7 @@ const Login: React.FC<Props> = ({ error, devUserName, onDevLogin }) => {
   const handleDevLogin = async () => {
     setDevLoading(true);
     setDevError('');
-    const res = await fetch('/api/auth/dev-login', { method: 'POST' });
+    const res = await fetch('/api/auth/dev-login', { method: 'POST', credentials: 'include' });
     setDevLoading(false);
     if (!res.ok) {
       setDevError('Dev login failed');

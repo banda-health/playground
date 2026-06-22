@@ -1,5 +1,6 @@
 import express from 'express';
 import session from 'express-session';
+import connectPgSimple from 'connect-pg-simple';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
@@ -11,6 +12,7 @@ import {
   listMockups,
   createMockup,
   deleteMockup,
+  pool,
 } from './db.js';
 import { requireAuth, registerAuthRoutes, resolveHubConfig } from './auth.js';
 
@@ -32,14 +34,26 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 app.set('trust proxy', 1);
 
+const PgSession = connectPgSimple(session);
+const cookieSecure = process.env.COOKIE_SECURE === 'false' ? false : isProduction;
+
 app.use(session({
+  store: new PgSession({
+    pool,
+    tableName: 'session',
+    createTableIfMissing: true,
+  }),
+  name: 'playground.sid',
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
+  proxy: true,
   cookie: {
     httpOnly: true,
     sameSite: 'lax',
-    secure: isProduction,
+    secure: cookieSecure,
+    path: '/',
+    maxAge: 30 * 24 * 60 * 60 * 1000,
   },
 }));
 
