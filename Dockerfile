@@ -23,8 +23,9 @@ FROM nginx:alpine AS production
 # Copy built assets from builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Copy nginx config template — envsubst runs at container start via the
+# Copy nginx config templates — envsubst runs at container start via the
 # nginx image's built-in entrypoint, substituting $API_PORT before nginx starts
+COPY 00-forwarded.conf.template /etc/nginx/templates/00-forwarded.conf.template
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 
 # Expose port (will be overridden by docker-compose)

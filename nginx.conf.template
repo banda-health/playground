@@ -6,11 +6,6 @@ server {
 
     client_max_body_size 10m;
 
-    map $http_x_forwarded_proto $forwarded_proto {
-        default $http_x_forwarded_proto;
-        ''      $scheme;
-    }
-
     # Gzip compression
     gzip on;
     gzip_vary on;
