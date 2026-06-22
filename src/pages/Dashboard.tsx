@@ -29,7 +29,11 @@ function isAllowedFile(file: File) {
   return ALLOWED_EXTENSIONS.has(ext);
 }
 
-const Dashboard: React.FC = () => {
+interface Props {
+  onLogout: () => void;
+}
+
+const Dashboard: React.FC<Props> = ({ onLogout }) => {
   const [mockups, setMockups] = useState<Mockup[]>([]);
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
@@ -56,8 +60,14 @@ const Dashboard: React.FC = () => {
     setFile(f);
   };
 
+  const handleLogout = async () => {
+    await fetch('/api/logout', { method: 'POST' });
+    onLogout();
+  };
+
   const load = async () => {
     const res = await fetch('/api/mockups');
+    if (res.status === 401) { onLogout(); return; }
     setMockups(await res.json());
     setLoading(false);
   };
@@ -120,12 +130,20 @@ const Dashboard: React.FC = () => {
       <div className="max-w-6xl mx-auto px-6 py-8">
         <div className="flex items-center justify-between mb-3">
           <h1 className="text-xl font-semibold text-gray-900">Playground</h1>
-          <button
-            onClick={() => setShowUpload(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors"
-          >
-            Upload mockup
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowUpload(true)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors"
+            >
+              Upload mockup
+            </button>
+            <button
+              onClick={handleLogout}
+              className="text-sm text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center gap-4 mb-8 pb-4 border-b border-gray-200">

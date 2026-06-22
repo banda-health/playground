@@ -1,4 +1,5 @@
 import express from 'express';
+import session from 'express-session';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
@@ -8,8 +9,42 @@ const app = express();
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const UPLOAD_DIR = path.join(DATA_DIR, 'mockups');
 const META_FILE = path.join(DATA_DIR, 'meta.json');
+const AUTH_PASSWORD = process.env.AUTH_PASSWORD;
+const SESSION_SECRET = process.env.SESSION_SECRET || randomUUID();
+
+if (!AUTH_PASSWORD) console.warn('WARNING: AUTH_PASSWORD not set — auth is disabled');
+if (!process.env.SESSION_SECRET) console.warn('WARNING: SESSION_SECRET not set — sessions will not survive restarts');
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+app.use(session({
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: { httpOnly: true, sameSite: 'lax' },
+}));
+
+app.use(express.json());
+
+function requireAuth(req, res, next) {
+  if (!AUTH_PASSWORD || req.session?.authed) return next();
+  res.status(401).json({ error: 'Unauthorized' });
+}
+
+app.post('/api/login', (req, res) => {
+  if (!AUTH_PASSWORD) return res.json({ ok: true });
+  if (req.body?.password === AUTH_PASSWORD) {
+    req.session.authed = true;
+    return res.json({ ok: true });
+  }
+  res.status(401).json({ error: 'Incorrect password' });
+});
+
+app.post('/api/logout', (req, res) => {
+  req.session.destroy(() => res.json({ ok: true }));
+});
+
+app.get('/api/me', requireAuth, (req, res) => res.json({ ok: true }));
 
 function loadMeta() {
   try { return JSON.parse(fs.readFileSync(META_FILE, 'utf8')); }
@@ -46,13 +81,13 @@ const upload = multer({
   },
 });
 
-app.use('/mockups', express.static(UPLOAD_DIR));
+app.use('/mockups', requireAuth, express.static(UPLOAD_DIR));
 
-app.get('/api/mockups', (req, res) => {
+app.get('/api/mockups', requireAuth, (req, res) => {
   res.json(loadMeta());
 });
 
-app.post('/api/mockups', (req, res) => {
+app.post('/api/mockups', requireAuth, (req, res) => {
   upload.single('file')(req, res, (err) => {
     if (err) {
       const message = err.code === 'LIMIT_FILE_SIZE'
@@ -81,7 +116,7 @@ app.post('/api/mockups', (req, res) => {
   });
 });
 
-app.delete('/api/mockups/:id', (req, res) => {
+app.delete('/api/mockups/:id', requireAuth, (req, res) => {
   const meta = loadMeta();
   const idx = meta.findIndex(m => m.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Not found' });
