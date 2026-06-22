@@ -17,6 +17,18 @@ const COMPONENT_PAGES = [
   { label: 'Visit Builder V3', path: '/visits/builder-v3' },
 ];
 
+const ALLOWED_EXTENSIONS = new Set([
+  '.html', '.htm', '.pdf', '.svg',
+  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.ico', '.avif',
+]);
+
+const ACCEPT_TYPES = 'image/*,.pdf,.svg,.html,.htm';
+
+function isAllowedFile(file: File) {
+  const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')).toLowerCase() : '';
+  return ALLOWED_EXTENSIONS.has(ext);
+}
+
 const Dashboard: React.FC = () => {
   const [mockups, setMockups] = useState<Mockup[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,7 +38,23 @@ const Dashboard: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const [fileError, setFileError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const selectFile = (f: File | null) => {
+    if (!f) {
+      setFile(null);
+      setFileError('');
+      return;
+    }
+    if (!isAllowedFile(f)) {
+      setFile(null);
+      setFileError('Only images, PDFs, SVGs, and HTML files are allowed');
+      return;
+    }
+    setFileError('');
+    setFile(f);
+  };
 
   const load = async () => {
     const res = await fetch('/api/mockups');
@@ -43,11 +71,18 @@ const Dashboard: React.FC = () => {
     const form = new FormData();
     form.append('file', file);
     form.append('title', title || file.name);
-    await fetch('/api/mockups', { method: 'POST', body: form });
+    const res = await fetch('/api/mockups', { method: 'POST', body: form });
+    if (!res.ok) {
+      const { error } = await res.json();
+      setFileError(error || 'Upload failed');
+      setUploading(false);
+      return;
+    }
     setUploading(false);
     setShowUpload(false);
     setTitle('');
     setFile(null);
+    setFileError('');
     load();
   };
 
@@ -67,10 +102,10 @@ const Dashboard: React.FC = () => {
     e.preventDefault();
     setDragging(false);
     const f = e.dataTransfer.files[0];
-    if (f) setFile(f);
+    if (f) selectFile(f);
   }, []);
 
-  const closeUpload = () => { setShowUpload(false); setFile(null); setTitle(''); };
+  const closeUpload = () => { setShowUpload(false); setFile(null); setTitle(''); setFileError(''); };
 
   const formatDate = (iso: string) =>
     new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -196,18 +231,22 @@ const Dashboard: React.FC = () => {
                 <input
                   ref={fileRef}
                   type="file"
+                  accept={ACCEPT_TYPES}
                   className="hidden"
-                  onChange={e => setFile(e.target.files?.[0] ?? null)}
+                  onChange={e => selectFile(e.target.files?.[0] ?? null)}
                 />
                 {file ? (
                   <p className="text-sm text-green-700 font-medium truncate px-2">{file.name}</p>
                 ) : (
                   <>
                     <p className="text-sm text-gray-500">Drop a file here or click to browse</p>
-                    <p className="text-xs text-gray-400 mt-1">Images, PDFs, SVGs · up to 100 MB</p>
+                    <p className="text-xs text-gray-400 mt-1">Images, PDFs, SVGs, HTML · up to 10 MB</p>
                   </>
                 )}
               </div>
+              {fileError && (
+                <p className="text-sm text-red-600">{fileError}</p>
+              )}
               <input
                 type="text"
                 value={title}

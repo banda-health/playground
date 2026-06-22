@@ -50,7 +50,7 @@ The production app will be available at `http://localhost:8080` (or the value of
 
 The home page (`/`) is a dashboard for uploading and sharing UI mockups.
 
-- **Upload any file** — images, HTML, PDFs, SVGs, up to 100 MB
+- **Upload mockups** — images, HTML, PDFs, SVGs, up to 10 MB
 - **Instant shareable URL** — each upload gets a `/mockups/<id>.<ext>` URL
 - **HTML files render live** — open an uploaded `.html` file and the browser renders it fully, including styles and interactions
 - **Drag and drop** supported in the upload modal

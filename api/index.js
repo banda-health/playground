@@ -20,6 +20,15 @@ function saveMeta(meta) {
   fs.writeFileSync(META_FILE, JSON.stringify(meta, null, 2));
 }
 
+const ALLOWED_EXTENSIONS = new Set([
+  '.html', '.htm', '.pdf', '.svg',
+  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.ico', '.avif',
+]);
+
+function isAllowedUpload(filename) {
+  return ALLOWED_EXTENSIONS.has(path.extname(filename).toLowerCase());
+}
+
 const storage = multer.diskStorage({
   destination: UPLOAD_DIR,
   filename: (req, file, cb) => {
@@ -28,7 +37,14 @@ const storage = multer.diskStorage({
   },
 });
 
-const upload = multer({ storage, limits: { fileSize: 100 * 1024 * 1024 } });
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (isAllowedUpload(file.originalname)) return cb(null, true);
+    cb(new Error('Only images, PDFs, SVGs, and HTML files are allowed'));
+  },
+});
 
 app.use('/mockups', express.static(UPLOAD_DIR));
 
@@ -36,24 +52,33 @@ app.get('/api/mockups', (req, res) => {
   res.json(loadMeta());
 });
 
-app.post('/api/mockups', upload.single('file'), (req, res) => {
-  const file = req.file;
-  if (!file) return res.status(400).json({ error: 'No file' });
+app.post('/api/mockups', (req, res) => {
+  upload.single('file')(req, res, (err) => {
+    if (err) {
+      const message = err.code === 'LIMIT_FILE_SIZE'
+        ? 'File exceeds 10 MB limit'
+        : err.message;
+      return res.status(400).json({ error: message });
+    }
 
-  const entry = {
-    id: path.parse(file.filename).name,
-    title: (req.body.title || file.originalname).trim(),
-    filename: file.filename,
-    url: `/mockups/${file.filename}`,
-    uploadedAt: new Date().toISOString(),
-    size: file.size,
-    mimetype: file.mimetype,
-  };
+    const file = req.file;
+    if (!file) return res.status(400).json({ error: 'No file' });
 
-  const meta = loadMeta();
-  meta.unshift(entry);
-  saveMeta(meta);
-  res.json(entry);
+    const entry = {
+      id: path.parse(file.filename).name,
+      title: (req.body.title || file.originalname).trim(),
+      filename: file.filename,
+      url: `/mockups/${file.filename}`,
+      uploadedAt: new Date().toISOString(),
+      size: file.size,
+      mimetype: file.mimetype,
+    };
+
+    const meta = loadMeta();
+    meta.unshift(entry);
+    saveMeta(meta);
+    res.json(entry);
+  });
 });
 
 app.delete('/api/mockups/:id', (req, res) => {
