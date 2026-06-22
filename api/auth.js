@@ -5,10 +5,10 @@ function base64UrlEncode(buffer) {
   return buffer.toString('base64url');
 }
 
-function signOAuthState(codeVerifier, secret) {
+function signOAuthState(secret, codeVerifier = null) {
   const nonce = base64UrlEncode(randomBytes(16));
-  const payload = JSON.stringify({ nonce, codeVerifier });
-  const payloadB64 = base64UrlEncode(Buffer.from(payload, 'utf8'));
+  const payload = codeVerifier ? { nonce, codeVerifier } : { nonce };
+  const payloadB64 = base64UrlEncode(Buffer.from(JSON.stringify(payload), 'utf8'));
   const signature = createHmac('sha256', secret).update(payloadB64).digest('base64url');
   return `${payloadB64}.${signature}`;
 }
@@ -33,11 +33,18 @@ function verifyOAuthState(state, secret) {
   }
 
   try {
-    const { codeVerifier } = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
-    return typeof codeVerifier === 'string' ? { codeVerifier } : null;
+    const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+    if (!payload?.nonce) return null;
+    return typeof payload.codeVerifier === 'string'
+      ? { codeVerifier: payload.codeVerifier }
+      : {};
   } catch {
     return null;
   }
+}
+
+function authRedirectError(res, message) {
+  return res.redirect(`/?auth_error=${encodeURIComponent(message)}`);
 }
 
 function generateCodeVerifier() {
@@ -52,6 +59,10 @@ const HUB_SERVICE_ID = '0-0-0-0-0';
 
 function hubScope(clientId) {
   return process.env.HUB_SCOPE?.trim() || `${HUB_SERVICE_ID} ${clientId}`;
+}
+
+function usePkce() {
+  return process.env.HUB_USE_PKCE === 'true';
 }
 
 function hubConfigFromEnv() {
@@ -164,9 +175,9 @@ export function registerAuthRoutes(app, { upsertUser, hubConfig: config, session
       return res.status(503).json({ error: 'Hub SSO is not configured' });
     }
 
-    const codeVerifier = generateCodeVerifier();
-    const codeChallenge = generateCodeChallenge(codeVerifier);
-    const state = signOAuthState(codeVerifier, sessionSecret);
+    const pkce = usePkce();
+    const codeVerifier = pkce ? generateCodeVerifier() : null;
+    const state = signOAuthState(sessionSecret, codeVerifier);
 
     const params = new URLSearchParams({
       response_type: 'code',
@@ -174,10 +185,13 @@ export function registerAuthRoutes(app, { upsertUser, hubConfig: config, session
       redirect_uri: config.redirectUri,
       state,
       scope: config.scope,
-      code_challenge: codeChallenge,
-      code_challenge_method: 'S256',
       request_credentials: 'required',
     });
+
+    if (pkce && codeVerifier) {
+      params.set('code_challenge', generateCodeChallenge(codeVerifier));
+      params.set('code_challenge_method', 'S256');
+    }
 
     res.redirect(`${config.hubUrl}/api/rest/oauth2/auth?${params}`);
   });
@@ -197,12 +211,20 @@ export function registerAuthRoutes(app, { upsertUser, hubConfig: config, session
 
     const oauthState = verifyOAuthState(state, sessionSecret);
     if (!code || !oauthState) {
-      return res.redirect('/?auth_error=Invalid%20OAuth%20state');
+      return authRedirectError(res, 'Invalid OAuth state');
     }
 
-    const { codeVerifier } = oauthState;
-
     try {
+      const tokenBody = new URLSearchParams({
+        grant_type: 'authorization_code',
+        code: String(code),
+        redirect_uri: config.redirectUri,
+      });
+
+      if (oauthState.codeVerifier) {
+        tokenBody.set('code_verifier', oauthState.codeVerifier);
+      }
+
       const tokenRes = await fetch(`${config.hubUrl}/api/rest/oauth2/token`, {
         method: 'POST',
         headers: {
@@ -210,17 +232,20 @@ export function registerAuthRoutes(app, { upsertUser, hubConfig: config, session
           'Content-Type': 'application/x-www-form-urlencoded',
           Authorization: `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64')}`,
         },
-        body: new URLSearchParams({
-          grant_type: 'authorization_code',
-          code: String(code),
-          redirect_uri: config.redirectUri,
-          code_verifier: codeVerifier,
-        }),
+        body: tokenBody,
       });
 
       if (!tokenRes.ok) {
-        console.error('Hub token exchange failed:', await tokenRes.text());
-        return res.redirect('/?auth_error=Failed%20to%20exchange%20authorization%20code');
+        const errorBody = await tokenRes.text();
+        console.error('Hub token exchange failed:', errorBody);
+        let hubMessage = 'Failed to exchange authorization code';
+        try {
+          const parsed = JSON.parse(errorBody);
+          hubMessage = parsed.error_description || parsed.error || hubMessage;
+        } catch {
+          if (errorBody) hubMessage = errorBody.slice(0, 200);
+        }
+        return authRedirectError(res, hubMessage);
       }
 
       const tokenData = await tokenRes.json();
