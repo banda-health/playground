@@ -6,7 +6,6 @@ import {
 	Routes,
 } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
-import Login from './pages/Login';
 import TabsV3 from './pages/visits/TabsV3';
 import TabsV4 from './pages/visits/TabsV4';
 import VisitBuilderV3 from './pages/visits/VisitBuilderV3';
@@ -24,16 +23,7 @@ function readAuthError(): string | null {
 async function fetchCurrentUser(): Promise<User | null> {
 	const res = await fetch('/api/me', { credentials: 'include' });
 	if (res.ok) return res.json();
-
-	const devRes = await fetch('/api/auth/dev-available', { credentials: 'include' });
-	if (!devRes.ok) return null;
-
-	const { available } = await devRes.json();
-	if (!available) return null;
-
-	const loginRes = await fetch('/api/auth/dev-login', { method: 'POST', credentials: 'include' });
-	if (!loginRes.ok) return null;
-	return loginRes.json();
+	return null;
 }
 
 async function fetchDevUserName(): Promise<string | null> {
@@ -47,7 +37,7 @@ const App: React.FC = () => {
 	const [user, setUser] = useState<User | null>(null);
 	const [devUserName, setDevUserName] = useState<string | null>(null);
 	const [loading, setLoading] = useState(true);
-	const [authError] = useState(readAuthError);
+	const [authError, setAuthError] = useState(readAuthError);
 
 	useEffect(() => {
 		fetchCurrentUser()
@@ -56,25 +46,14 @@ const App: React.FC = () => {
 	}, []);
 
 	useEffect(() => {
-		if (user) return;
 		fetchDevUserName().then(setDevUserName);
-	}, [user]);
+	}, []);
 
 	if (loading) {
 		return (
 			<div className="min-h-screen bg-gray-50 flex items-center justify-center">
 				<span className="text-gray-400 text-sm">Loading...</span>
 			</div>
-		);
-	}
-
-	if (!user) {
-		return (
-			<Login
-				error={authError}
-				devUserName={devUserName}
-				onDevLogin={setUser}
-			/>
 		);
 	}
 
@@ -85,7 +64,16 @@ const App: React.FC = () => {
 					<Routes>
 						<Route
 							path="/"
-							element={<Dashboard user={user} onLogout={() => setUser(null)} />}
+							element={
+								<Dashboard
+									user={user}
+									devUserName={devUserName}
+									authError={authError}
+									onClearAuthError={() => setAuthError(null)}
+									onLogin={setUser}
+									onLogout={() => setUser(null)}
+								/>
+							}
 						/>
 						<Route path="/visits/tabs-v3" element={<TabsV3 />} />
 						<Route path="/visits/tabs-v4" element={<TabsV4 />} />

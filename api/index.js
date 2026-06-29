@@ -89,9 +89,9 @@ const upload = multer({
   },
 });
 
-app.use('/mockups', requireAuth, express.static(UPLOAD_DIR));
+app.use('/mockups', express.static(UPLOAD_DIR));
 
-app.get('/api/mockups', requireAuth, async (req, res) => {
+app.get('/api/mockups', async (req, res) => {
   try {
     res.json(await listMockups());
   } catch (err) {

@@ -33,11 +33,15 @@ function isAllowedFile(file: File) {
 }
 
 interface Props {
-  user: User;
+  user: User | null;
+  devUserName?: string | null;
+  authError?: string | null;
+  onClearAuthError?: () => void;
+  onLogin: (user: User) => void;
   onLogout: () => void;
 }
 
-const Dashboard: React.FC<Props> = ({ user, onLogout }) => {
+const Dashboard: React.FC<Props> = ({ user, devUserName, authError, onClearAuthError, onLogin, onLogout }) => {
   const [mockups, setMockups] = useState<Mockup[]>([]);
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
@@ -69,10 +73,21 @@ const Dashboard: React.FC<Props> = ({ user, onLogout }) => {
     onLogout();
   };
 
+  const handleSignIn = async () => {
+    if (devUserName) {
+      const res = await fetch('/api/auth/dev-login', { method: 'POST', credentials: 'include' });
+      if (res.ok) {
+        onClearAuthError?.();
+        onLogin(await res.json());
+      }
+      return;
+    }
+    window.location.href = '/api/auth/login';
+  };
+
   const load = async () => {
     const res = await fetch('/api/mockups', { credentials: 'include' });
-    if (res.status === 401) { onLogout(); return; }
-    setMockups(await res.json());
+    if (res.ok) setMockups(await res.json());
     setLoading(false);
   };
 
@@ -132,22 +147,47 @@ const Dashboard: React.FC<Props> = ({ user, onLogout }) => {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-6xl mx-auto px-6 py-8">
+        {authError && (
+          <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>{authError}</span>
+            <button
+              type="button"
+              onClick={onClearAuthError}
+              className="shrink-0 text-red-400 hover:text-red-600"
+              aria-label="Dismiss"
+            >
+              &times;
+            </button>
+          </div>
+        )}
         <div className="flex items-center justify-between mb-3">
           <h1 className="text-xl font-semibold text-gray-900">Playground</h1>
           <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-500 hidden sm:inline">{user.name}</span>
-            <button
-              onClick={() => setShowUpload(true)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors"
-            >
-              Upload mockup
-            </button>
-            <button
-              onClick={handleLogout}
-              className="text-sm text-gray-400 hover:text-gray-600 transition-colors"
-            >
-              Sign out
-            </button>
+            {user ? (
+              <>
+                <span className="text-sm text-gray-500 hidden sm:inline">{user.name}</span>
+                <button
+                  onClick={() => setShowUpload(true)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors"
+                >
+                  Upload mockup
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="text-sm text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSignIn}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors"
+              >
+                Sign in
+              </button>
+            )}
           </div>
         </div>
 
@@ -169,9 +209,19 @@ const Dashboard: React.FC<Props> = ({ user, onLogout }) => {
         ) : mockups.length === 0 ? (
           <div className="text-center py-24">
             <p className="text-gray-400 text-sm mb-3">No mockups uploaded yet</p>
-            <button onClick={() => setShowUpload(true)} className="text-blue-600 hover:underline text-sm">
-              Upload your first mockup
-            </button>
+            {user ? (
+              <button onClick={() => setShowUpload(true)} className="text-blue-600 hover:underline text-sm">
+                Upload your first mockup
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSignIn}
+                className="text-blue-600 hover:underline text-sm"
+              >
+                Sign in to upload mockups
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
@@ -219,12 +269,14 @@ const Dashboard: React.FC<Props> = ({ user, onLogout }) => {
                     >
                       {copied === m.id ? 'Copied!' : 'Copy URL'}
                     </button>
-                    <button
-                      onClick={() => handleDelete(m.id)}
-                      className="px-3 py-1.5 text-red-400 rounded-lg text-xs hover:bg-red-50 transition-colors"
-                    >
-                      Delete
-                    </button>
+                    {user && (
+                      <button
+                        onClick={() => handleDelete(m.id)}
+                        className="px-3 py-1.5 text-red-400 rounded-lg text-xs hover:bg-red-50 transition-colors"
+                      >
+                        Delete
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -233,7 +285,7 @@ const Dashboard: React.FC<Props> = ({ user, onLogout }) => {
         )}
       </div>
 
-      {showUpload && (
+      {user && showUpload && (
         <div
           className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
           onClick={e => { if (e.target === e.currentTarget) closeUpload(); }}
