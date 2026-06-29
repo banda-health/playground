@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ExternalLink } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { User } from '../types';
 
@@ -259,9 +260,11 @@ const Dashboard: React.FC<Props> = ({ user, devUserName, authError, onClearAuthE
                       href={m.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex-1 text-center px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200 transition-colors"
+                      title="Open in new tab"
+                      className="flex flex-1 items-center justify-center gap-1 px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200 transition-colors"
                     >
                       Open
+                      <ExternalLink className="w-3 h-3 shrink-0 opacity-70" aria-hidden="true" />
                     </a>
                     <button
                       onClick={() => copyUrl(m.url, m.id)}
